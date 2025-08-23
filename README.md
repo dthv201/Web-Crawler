@@ -69,13 +69,6 @@ https://es.wikipedia.org/     1     0.58
 
 ---
 
-````
 
-👉 Save this as `README.md`, then commit:
-
-```bash
-git add README.md
-git commit -m "docs: polish project README"
-```
 
 
