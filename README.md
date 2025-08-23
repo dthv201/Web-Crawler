@@ -69,6 +69,34 @@ https://es.wikipedia.org/     1     0.58
 
 ---
 
+``
+## How It Works
+
+The crawler performs a **breadth-first search (BFS)** starting from the root page.  
+At each step:
+1. Fetch the page’s HTML.
+2. Extract all `<a href="...">` links.
+3. Compute the ratio of same-domain links to total links.
+4. Add unvisited links to the next layer (until the depth limit is reached).
+
+### Example (depth = 2)
+
+```
+       [ Root: https://foo.com ]  depth 0
+                |
+   ------------------------------------
+   |                |                 |
+[foo.com/a]    [foo.com/b]      [bar.com/c]   depth 1
+     |                |                 |
+   ------           -----             -----
+   |    |           |   |             |   |
+[..] [..]       [..] [..]         [..] [..]   depth 2
+```
+
+- Each node = a page visited.  
+- BFS ensures we visit all pages at depth 0, then depth 1, then depth 2.  
+- The **ratio** is computed individually for each page (e.g. `foo.com/a` checks how many of its own links also point to `foo.com`).  
+- The **visited set** ensures no page is crawled twice (avoids loops like A → B → A).  
 
 
 
