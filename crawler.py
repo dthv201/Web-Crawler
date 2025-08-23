@@ -3,7 +3,92 @@ import asyncio
 import aiohttp
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
+import os
+import asyncio
+# Step 6 — Add concurrency (utilize the machine)
+import os
+import asyncio
 
+async def crawl(root: str, max_depth: int) -> list[tuple[str,int,float]]:
+    visited = {root}
+    results: list[tuple[str,int,float]] = []
+    frontier: list[tuple[str,int]] = [(root, 0)]
+    max_conc = max(20, (os.cpu_count() or 2) * 5)
+    sem = asyncio.Semaphore(max_conc)
+
+    async with aiohttp.ClientSession(headers={"User-Agent": "SimpleCrawler/1.0"}) as s:
+        while frontier:
+            next_frontier: list[tuple[str,int]] = []
+            tasks = []
+
+            async def work(u: str, d: int):
+                async with sem:
+                    html = None
+                    try:
+                        async with s.get(u, timeout=15) as r:
+                            if "text/html" in (r.headers.get("Content-Type") or "").lower():
+                                html = await r.text()
+                    except Exception:
+                        pass
+
+                    if not html:
+                        results.append((u, d, 0.0)); return
+
+                    links = extract_links(html, u)
+                    ratio = round(same_domain_retio(u, links), 6)
+                    results.append((u, d, ratio))
+
+                    if d < max_depth:
+                        for l in links:
+                            if l not in visited:
+                                visited.add(l)
+                                next_frontier.append((l, d + 1))
+
+            for url, d in frontier:
+                tasks.append(asyncio.create_task(work(url, d)))
+
+            await asyncio.gather(*tasks)
+            frontier = next_frontier
+
+    return results
+
+
+
+# Crawl with depth (BFS) and “visited”
+async def crawl_sync_style(root: str, max_depth: int)-> list[tuple[str, int, float]]:
+    visited = {root}
+    results: list[tuple[str, int, float]] = []
+    frontier: list[tuple[str,int]] = [(root, 0)]
+
+    async with aiohttp.ClientSession(headers={"User-Agent": "SimpleCrawler/1.0"}) as session:
+        while frontier:
+            next_frontier: list[tuple[str,int]] = []
+            for url, depth in frontier:
+                html = None
+                try:
+                    async with session.get(url, timeout=15) as response:
+                        if "text/html" not in (response.headers.get("Content-Type") or "").lower():
+                            html = await response.text()
+                except Exception:
+                    pass
+                if not html:
+                    results.append((url, depth, 0.0))
+                    continue
+
+                links = extract_links(html, url)
+                ratio = round(same_domain_retio(url, links), 6)
+                results.append((url, depth, ratio))
+
+                if depth < max_depth:
+                    for l in links:
+                        if l not in visited:
+                            visited.add(l)
+                            next_frontier.append((l, depth + 1))
+            frontier = next_frontier
+
+    return results
+
+# compute the same-domain ratio for that single page.
 def same_domain_retio(page_url: str, links: list[str]) -> float:
     page_host = urlparse(page_url).netloc
     hosts = [urlparse(l).netloc for l in links]
@@ -13,7 +98,7 @@ def same_domain_retio(page_url: str, links: list[str]) -> float:
     same_domain = sum(1 for h in hosts if h == page_host)
     return same_domain / len(hosts)
 
-
+# extract all <a href="..."> links from that HTML.
 def extract_links(html: str, base_url: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     links: list[str] = []
@@ -68,6 +153,9 @@ def main():
         print(f"Found {len(links)} links; first 5:\n", "\n".join(links[:5]))
         ratio = same_domain_retio(root, links)
         print("Ratio:", ratio)
+        rows = asyncio.run(crawl(root, depth))
+        print("Crawled", len(rows), "pages")
+
 
 if __name__ == "__main__":
     main()
